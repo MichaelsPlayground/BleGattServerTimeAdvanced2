@@ -10,7 +10,9 @@ and implements the server role of the GATT
 > use on January 5, 2022. For more details, see the
 > [FAQ page](https://developer.android.com/things/faq).
 
-Org Source: https://github.com/androidthings/sample-bluetooth-le-gattserver
+Original source: https://github.com/androidthings/sample-bluetooth-le-gattserver
+
+Note: this is a renewed version that runs on Android  devices up to Android 12 (SDK 32).
 
 ## Pre-requisites
 

@@ -1,4 +1,4 @@
-package de.androidcrypto.bluetoothlesamplegattserver1;
+package de.androidcrypto.blegattservertime;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -24,6 +24,7 @@ public class MainActivity extends AppCompatActivity {
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.ACCESS_FINE_LOCATION,
     };
+
     @SuppressLint("InlinedApi")
     private static final String[] ANDROID_12_BLE_PERMISSIONS = new String[]{
             Manifest.permission.BLUETOOTH_SCAN,

@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "BluetoothLeSampleGattServer1"
+rootProject.name = "BleGattServerTime"
 include ':app'

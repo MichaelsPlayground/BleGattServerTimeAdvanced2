@@ -1,4 +1,4 @@
-package de.androidcrypto.bluetoothlesamplegattserver1;
+package de.androidcrypto.blegattservertime;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -28,6 +28,8 @@ import android.util.Log;
 import android.view.WindowManager;
 import android.widget.TextView;
 
+import com.google.android.material.switchmaterial.SwitchMaterial;
+
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
@@ -38,10 +40,14 @@ public class GattServerActivity extends AppCompatActivity {
     private static final String TAG = GattServerActivity.class.getSimpleName();
 
     /* Local UI */
-    private TextView mLocalTimeView;
+    private TextView mLocalTimeView, gattLog;
+    SwitchMaterial bluetoothEnabled, advertisingActive, deviceConnected;
+
     /* Bluetooth API */
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
+    private static final String ADVERTISING_NAME = "TimeServer1";
+    private BluetoothGattCharacteristic mDeviceNameCharacteristic;
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
@@ -52,7 +58,11 @@ public class GattServerActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_gatt_server);
 
+        bluetoothEnabled = findViewById(R.id.swGattBleEnabled);
+        advertisingActive = findViewById(R.id.swGattAdvertisingActive);
+        deviceConnected = findViewById(R.id.swGattDeviceConnected);
         mLocalTimeView = (TextView) findViewById(R.id.text_time);
+        gattLog = findViewById(R.id.tvGattLog);
 
         // Devices with a display should not go to sleep
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -69,17 +79,42 @@ public class GattServerActivity extends AppCompatActivity {
         registerReceiver(mBluetoothReceiver, filter);
         if (!bluetoothAdapter.isEnabled()) {
             Log.d(TAG, "Bluetooth is currently disabled...enabling");
+            addLog("Bluetooth is currently disabled...enabling");
             bluetoothAdapter.enable();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    bluetoothEnabled.setChecked(false);
+                }
+            });
         } else {
             Log.d(TAG, "Bluetooth enabled...starting services");
+            addLog("Bluetooth enabled...starting services");
             startAdvertising();
             startServer();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    bluetoothEnabled.setChecked(true);
+                }
+            });
         }
+    }
+
+    private void addLog(String message) {
+        String newMessage = message + "\n" + gattLog.getText().toString();
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                gattLog.setText(newMessage);
+            }
+        });
     }
 
     @Override
     protected void onStart() {
         super.onStart();
+        addLog("register system clock events");
         // Register for system clock events
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_TIME_TICK);
@@ -91,17 +126,25 @@ public class GattServerActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
+        addLog("unregister system clock events");
         unregisterReceiver(mTimeReceiver);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
+        addLog("onDestroy");
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
         if (bluetoothAdapter.isEnabled()) {
             stopServer();
             stopAdvertising();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    advertisingActive.setChecked(false);
+                }
+            });
+
         }
 
         unregisterReceiver(mBluetoothReceiver);
@@ -116,11 +159,13 @@ public class GattServerActivity extends AppCompatActivity {
 
         if (bluetoothAdapter == null) {
             Log.w(TAG, "Bluetooth is not supported");
+            addLog("Bluetooth is not supported");
             return false;
         }
 
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             Log.w(TAG, "Bluetooth LE is not supported");
+            addLog("Bluetooth LE is not supported");
             return false;
         }
 
@@ -164,12 +209,26 @@ public class GattServerActivity extends AppCompatActivity {
 
             switch (state) {
                 case BluetoothAdapter.STATE_ON:
+                    addLog("BluetoothReceiver state: STATE_ON");
                     startAdvertising();
                     startServer();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            advertisingActive.setChecked(true);
+                        }
+                    });
                     break;
                 case BluetoothAdapter.STATE_OFF:
+                    addLog("BluetoothReceiver state: STATE_OFF");
                     stopServer();
                     stopAdvertising();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            advertisingActive.setChecked(false);
+                        }
+                    });
                     break;
                 default:
                     // Do nothing
@@ -185,14 +244,17 @@ public class GattServerActivity extends AppCompatActivity {
     @SuppressLint("MissingPermission")
     private void startAdvertising() {
         BluetoothAdapter bluetoothAdapter = mBluetoothManager.getAdapter();
+        bluetoothAdapter.setName(ADVERTISING_NAME);
         mBluetoothLeAdvertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
         if (mBluetoothLeAdvertiser == null) {
             Log.w(TAG, "Failed to create advertiser");
+            addLog("Failed to create BluetoothLeAdvertiser");
             return;
         }
 
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+                //.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
                 .setConnectable(true)
                 .setTimeout(0)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
@@ -214,7 +276,6 @@ public class GattServerActivity extends AppCompatActivity {
     @SuppressLint("MissingPermission")
     private void stopAdvertising() {
         if (mBluetoothLeAdvertiser == null) return;
-
         mBluetoothLeAdvertiser.stopAdvertising(mAdvertiseCallback);
     }
 
@@ -229,9 +290,7 @@ public class GattServerActivity extends AppCompatActivity {
             Log.w(TAG, "Unable to create GATT server");
             return;
         }
-
         mBluetoothGattServer.addService(TimeProfile.createTimeService());
-
         // Initialize the local UI
         updateLocalUi(System.currentTimeMillis());
     }
@@ -253,11 +312,25 @@ public class GattServerActivity extends AppCompatActivity {
         @Override
         public void onStartSuccess(AdvertiseSettings settingsInEffect) {
             Log.i(TAG, "LE Advertise Started.");
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    advertisingActive.setChecked(true);
+                }
+            });
+            addLog("LE Advertise Started.");
         }
 
         @Override
         public void onStartFailure(int errorCode) {
-            Log.w(TAG, "LE Advertise Failed: "+errorCode);
+            Log.w(TAG, "LE Advertise Failed: " + errorCode);
+            addLog("LE Advertise Failed: " + errorCode);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    advertisingActive.setChecked(false);
+                }
+            });
         }
     };
 
@@ -269,11 +342,13 @@ public class GattServerActivity extends AppCompatActivity {
     private void notifyRegisteredDevices(long timestamp, byte adjustReason) {
         if (mRegisteredDevices.isEmpty()) {
             Log.i(TAG, "No subscribers registered");
+            addLog("No subscribers registered for time service");
             return;
         }
         byte[] exactTime = TimeProfile.getExactTime(timestamp, adjustReason);
 
         Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
+        addLog("Sending update to " + mRegisteredDevices.size() + " subscribers");
         for (BluetoothDevice device : mRegisteredDevices) {
             BluetoothGattCharacteristic timeCharacteristic = mBluetoothGattServer
                     .getService(TimeProfile.TIME_SERVICE)
@@ -304,8 +379,22 @@ public class GattServerActivity extends AppCompatActivity {
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "BluetoothDevice CONNECTED: " + device);
+                addLog("BluetoothDevice CONNECTED: " + device);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        deviceConnected.setChecked(true);
+                    }
+                });
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "BluetoothDevice DISCONNECTED: " + device);
+                addLog("BluetoothDevice DISCONNECTED: " + device);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        deviceConnected.setChecked(false);
+                    }
+                });
                 //Remove device from any active subscriptions
                 mRegisteredDevices.remove(device);
             }
@@ -318,6 +407,7 @@ public class GattServerActivity extends AppCompatActivity {
             long now = System.currentTimeMillis();
             if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read CurrentTime");
+                addLog("Read CurrentTime");
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_SUCCESS,
@@ -325,6 +415,7 @@ public class GattServerActivity extends AppCompatActivity {
                         TimeProfile.getExactTime(now, TimeProfile.ADJUST_NONE));
             } else if (TimeProfile.LOCAL_TIME_INFO.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read LocalTimeInfo");
+                addLog("Read LocalTimeInfo");
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_SUCCESS,
@@ -333,6 +424,7 @@ public class GattServerActivity extends AppCompatActivity {
             } else {
                 // Invalid characteristic
                 Log.w(TAG, "Invalid Characteristic Read: " + characteristic.getUuid());
+                addLog("Invalid Characteristic Read: " + characteristic.getUuid());
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_FAILURE,
@@ -347,6 +439,7 @@ public class GattServerActivity extends AppCompatActivity {
                                             BluetoothGattDescriptor descriptor) {
             if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 Log.d(TAG, "Config descriptor read");
+                addLog("Config descriptor read");
                 byte[] returnValue;
                 if (mRegisteredDevices.contains(device)) {
                     returnValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
@@ -355,11 +448,13 @@ public class GattServerActivity extends AppCompatActivity {
                 }
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
-                        BluetoothGatt.GATT_FAILURE,
+                        BluetoothGatt.GATT_SUCCESS,
+                        // BluetoothGatt.GATT_FAILURE,
                         0,
                         returnValue);
             } else {
                 Log.w(TAG, "Unknown descriptor read request");
+                addLog("Unknown descriptor read request");
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_FAILURE,
@@ -377,9 +472,11 @@ public class GattServerActivity extends AppCompatActivity {
             if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Subscribe device to notifications: " + device);
+                    addLog("Subscribe device to notifications: " + device);
                     mRegisteredDevices.add(device);
                 } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Unsubscribe device from notifications: " + device);
+                    addLog("Unsubscribe device to notifications: " + device);
                     mRegisteredDevices.remove(device);
                 }
 
@@ -392,6 +489,7 @@ public class GattServerActivity extends AppCompatActivity {
                 }
             } else {
                 Log.w(TAG, "Unknown descriptor write request");
+                addLog("Unknown descriptor write request");
                 if (responseNeeded) {
                     mBluetoothGattServer.sendResponse(device,
                             requestId,

@@ -1,4 +1,4 @@
-package de.androidcrypto.bluetoothlesamplegattserver1;
+package de.androidcrypto.blegattservertime;
 
 import org.junit.Test;
 
