@@ -14,6 +14,26 @@ Original source: https://github.com/androidthings/sample-bluetooth-le-gattserver
 
 Note: this is a renewed version that runs on Android  devices up to Android 12 (SDK 32).
 
+```plaintext
+Typically, a GATT database has the services 0x1800 (Generic Access) and 
+0x1801 (Generic Attribute) at least. The Generic Access service contains two 
+mandatory characteristics: Device Name and Appearance. The Generic Attribute 
+service should be empty.
+
+Therefore, the minimal GATT database looks like this:
+
+Handle  Description
+ 0000   Service: Generic Access (1800)
+ 0001   Characteristic: Device Name (2A00, readable)
+ 0002   Characteristic Value (string)
+ 0003   Characteristic: Appearance (2A01, readable)
+ 0004   Characteristic Value (16bit enum)
+ 0005   Service: Generic Attribute (1801) 
+ 
+After these two services, you can add your own services. In your case, you don't 
+seem to target a well-known service, so you'll create an own one.
+```
+
 ## Pre-requisites
 
 - Android Things compatible board
