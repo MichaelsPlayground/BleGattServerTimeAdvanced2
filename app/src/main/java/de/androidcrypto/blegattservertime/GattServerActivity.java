@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.AdvertiseCallback;
@@ -33,7 +34,9 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class GattServerActivity extends AppCompatActivity {
 
@@ -46,11 +49,14 @@ public class GattServerActivity extends AppCompatActivity {
     /* Bluetooth API */
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
-    private static final String ADVERTISING_NAME = "TimeServer1";
+    private static final String ADVERTISING_NAME = "TimeServer2";
     private BluetoothGattCharacteristic mDeviceNameCharacteristic;
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
+
+    // this is needed if you want to add more than one service to the server
+    private Queue<BluetoothGattService> servicesToAdd = new LinkedBlockingQueue<>();
 
     @SuppressLint("MissingPermission")
     @Override
@@ -146,12 +152,12 @@ public class GattServerActivity extends AppCompatActivity {
             });
 
         }
-
         unregisterReceiver(mBluetoothReceiver);
     }
 
     /**
      * Verify the level of Bluetooth support provided by the hardware.
+     *
      * @param bluetoothAdapter System {@link BluetoothAdapter}.
      * @return true if Bluetooth is properly supported, false otherwise.
      */
@@ -203,6 +209,7 @@ public class GattServerActivity extends AppCompatActivity {
      * advertising and server functionality.
      */
     private BroadcastReceiver mBluetoothReceiver = new BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
         @Override
         public void onReceive(Context context, Intent intent) {
             int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.STATE_OFF);
@@ -263,7 +270,9 @@ public class GattServerActivity extends AppCompatActivity {
         AdvertiseData data = new AdvertiseData.Builder()
                 .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
+                .addServiceUuid(new ParcelUuid(BasicProfile.DEVICE_INFO_SERVICE)) // new
                 .addServiceUuid(new ParcelUuid(TimeProfile.TIME_SERVICE))
+                .addServiceUuid(new ParcelUuid(BatteryProfile.BATTERY_SERVICE))
                 .build();
 
         mBluetoothLeAdvertiser
@@ -290,7 +299,14 @@ public class GattServerActivity extends AppCompatActivity {
             Log.w(TAG, "Unable to create GATT server");
             return;
         }
-        mBluetoothGattServer.addService(TimeProfile.createTimeService());
+        /**
+         * Important: you cannot add services in a row, you need to wait until the previous
+         * add call succeeded
+         */
+        //mBluetoothGattServer.addService(BasicProfile.createBasicGattService()); // new but fails
+        servicesToAdd.add(TimeProfile.createTimeService()); // new
+        servicesToAdd.add(BatteryProfile.createBatteryService()); // new
+        mBluetoothGattServer.addService(BasicProfile.createBasicGattService());
         // Initialize the local UI
         updateLocalUi(System.currentTimeMillis());
     }
@@ -303,6 +319,35 @@ public class GattServerActivity extends AppCompatActivity {
         if (mBluetoothGattServer == null) return;
 
         mBluetoothGattServer.close();
+    }
+
+    /**
+     * this part is for adding additional services to the server. If you add them without this part
+     * you receive randomly an info
+     * "BluetoothGattServer: onCharacteristicReadRequest() no char for handle 47"
+     * and the new service is not added
+     * see: https://stackoverflow.com/questions/49930014/android-peripheral-bluetoothgattservercallback-onserviceadded-not-getting-call
+     */
+
+    //private Queue<BluetoothGattService> servicesToAdd = new LinkedBlockingQueue<>();
+
+    /**
+     * Add GATT service to gattServer
+     *
+     * @param service the service
+     */
+    @SuppressLint("MissingPermission")
+    private void addService(final BluetoothGattService service) {
+        assert mBluetoothGattServer != null;
+        boolean serviceAdded = false;
+        while (!serviceAdded) {
+            try {
+                serviceAdded = mBluetoothGattServer.addService(service);
+            } catch (final Exception e) {
+                Log.d(TAG, "Adding Service failed", e);
+            }
+        }
+        Log.d(TAG, "Service: " + service.getUuid() + " added.");
     }
 
     /**
@@ -356,6 +401,8 @@ public class GattServerActivity extends AppCompatActivity {
             timeCharacteristic.setValue(exactTime);
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
+
+        // todo notification for Battery Level
     }
 
     /**
@@ -374,6 +421,22 @@ public class GattServerActivity extends AppCompatActivity {
      * All read/write requests for characteristics and descriptors are handled here.
      */
     private BluetoothGattServerCallback mGattServerCallback = new BluetoothGattServerCallback() {
+
+        /**
+         * This is for adding additional services, new in Advanced1
+         */
+
+        @Override
+        public void onServiceAdded(final int status, final BluetoothGattService service) {
+            super.onServiceAdded(status, service);
+            Log.d(TAG, "onServiceAdded status: " + status + ", service: " + service.getUuid());
+            if (status != 0) {
+                Log.d(TAG, "onServiceAdded Adding Service failed..");
+            }
+            if (servicesToAdd.peek() != null) {
+                addService(servicesToAdd.remove());
+            }
+        }
 
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
@@ -405,7 +468,68 @@ public class GattServerActivity extends AppCompatActivity {
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset,
                                                 BluetoothGattCharacteristic characteristic) {
             long now = System.currentTimeMillis();
-            if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
+
+            /**
+             * characteristics for Basic Services
+             */
+            if (BasicProfile.MANUFACTURER_NAME.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read ManufacturerName");
+                addLog("Read ManufacturerName");
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BasicProfile.getManufacturerName());
+            } else if (BasicProfile.DEVICE_NAME.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read DeviceName");
+                addLog("Read DeviceName");
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BasicProfile.getDeviceName());
+            } else if (BasicProfile.MODEL_NUMBER.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read ModelNumber");
+                addLog("Read ModelNumber");
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BasicProfile.getModelNumber());
+            } else if (BasicProfile.SERIAL_NUMBER.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read SerialNumber");
+                addLog("Read SerialNumber");
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BasicProfile.getSerialNumber());
+                /**
+                 * characteristics for Battery Service
+                 */
+            } else if (BatteryProfile.BATTERY_LEVEL.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read BatteryLevel");
+                addLog("Read BatteryLevel");
+                // todo get the actual battery level
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BatteryProfile.getBatteryLevel(50));
+            } else if (BatteryProfile.BATTERY_LEVEL_WARN.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Read BatteryLevelWarn");
+                addLog("Read BatteryLevelWarn");
+                // todo get the actual battery level warn
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BatteryProfile.getBatteryLevelWarn(40));
+                /**
+                 * characteristics for Time Server
+                 */
+
+            } else if (TimeProfile.CURRENT_TIME.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read CurrentTime");
                 addLog("Read CurrentTime");
                 mBluetoothGattServer.sendResponse(device,
@@ -437,9 +561,10 @@ public class GattServerActivity extends AppCompatActivity {
         @Override
         public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset,
                                             BluetoothGattDescriptor descriptor) {
-            if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
-                Log.d(TAG, "Config descriptor read");
-                addLog("Config descriptor read");
+            addLog("onDescriptorReadRequest UUID: " + descriptor.getUuid() + " offset: " + offset);
+            if (BatteryProfile.CLIENT_CONFIG.equals(descriptor.getUuid()) & BatteryProfile.BATTERY_LEVEL.equals(descriptor.getCharacteristic().getUuid())) {
+                Log.d(TAG, "Config Battery descriptor read");
+                addLog("Config Battery descriptor read");
                 byte[] returnValue;
                 if (mRegisteredDevices.contains(device)) {
                     returnValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
@@ -452,6 +577,22 @@ public class GattServerActivity extends AppCompatActivity {
                         // BluetoothGatt.GATT_FAILURE,
                         0,
                         returnValue);
+            }
+                else if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid()) & TimeProfile.CURRENT_TIME.equals(descriptor.getCharacteristic().getUuid())) {
+                    Log.d(TAG, "Config Time descriptor read");
+                    addLog("Config Time descriptor read");
+                    byte[] returnValue;
+                    if (mRegisteredDevices.contains(device)) {
+                        returnValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
+                    } else {
+                        returnValue = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
+                    }
+                    mBluetoothGattServer.sendResponse(device,
+                            requestId,
+                            BluetoothGatt.GATT_SUCCESS,
+                            // BluetoothGatt.GATT_FAILURE,
+                            0,
+                            returnValue);
             } else {
                 Log.w(TAG, "Unknown descriptor read request");
                 addLog("Unknown descriptor read request");
@@ -461,6 +602,7 @@ public class GattServerActivity extends AppCompatActivity {
                         0,
                         null);
             }
+            // todo add descriptor for notification
         }
 
         @SuppressLint("MissingPermission")
@@ -469,14 +611,33 @@ public class GattServerActivity extends AppCompatActivity {
                                              BluetoothGattDescriptor descriptor,
                                              boolean preparedWrite, boolean responseNeeded,
                                              int offset, byte[] value) {
-            if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
+
+            if (BatteryProfile.CLIENT_CONFIG.equals(descriptor.getUuid()) & BatteryProfile.BATTERY_LEVEL.equals(descriptor.getCharacteristic().getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
-                    Log.d(TAG, "Subscribe device to notifications: " + device);
-                    addLog("Subscribe device to notifications: " + device);
+                    Log.d(TAG, "Subscribe device to battery level notifications: " + device);
+                    addLog("Subscribe device to battery level notifications: " + device);
                     mRegisteredDevices.add(device);
                 } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
-                    Log.d(TAG, "Unsubscribe device from notifications: " + device);
-                    addLog("Unsubscribe device to notifications: " + device);
+                    Log.d(TAG, "Unsubscribe device from battery level notifications: " + device);
+                    addLog("Unsubscribe device from battery level notifications: " + device);
+                    mRegisteredDevices.remove(device);
+                }
+                if (responseNeeded) {
+                    mBluetoothGattServer.sendResponse(device,
+                            requestId,
+                            BluetoothGatt.GATT_SUCCESS,
+                            0,
+                            null);
+                }
+
+            } else if (TimeProfile.CLIENT_CONFIG.equals(descriptor.getUuid())  & TimeProfile.CURRENT_TIME.equals(descriptor.getCharacteristic().getUuid())) {
+                if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
+                    Log.d(TAG, "Subscribe device to time notifications: " + device);
+                    addLog("Subscribe device to time notifications: " + device);
+                    mRegisteredDevices.add(device);
+                } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
+                    Log.d(TAG, "Unsubscribe device from time notifications: " + device);
+                    addLog("Unsubscribe device from time notifications: " + device);
                     mRegisteredDevices.remove(device);
                 }
 

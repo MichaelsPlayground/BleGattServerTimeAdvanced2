@@ -32,6 +32,8 @@ Handle  Description
  
 After these two services, you can add your own services. In your case, you don't 
 seem to target a well-known service, so you'll create an own one.
+
+Complete example: https://github.com/dbw9580/BLE-HID-Peripheral-for-Android/blob/14a791656b6b3ca310323a6443f057222ff38094/lib/src/main/java/jp/kshoji/blehid/HidPeripheral.java#L269
 ```
 
 ## Pre-requisites
