@@ -34,12 +34,12 @@ public class BatteryProfile {
     /* Battery Service UUID */
     public static UUID BATTERY_SERVICE    = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb");
     public static UUID BATTERY_LEVEL      = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
-    public static UUID BATTERY_LEVEL_WARN = UUID.fromString("0000fffe-0000-1000-8000-00805f9b34fb");
+    public static UUID BATTERY_LEVEL_WARN = UUID.fromString("0000fffe-0000-1000-8000-00805f9b34fb"); // Value Trigger Setting
     // 2901 is used when data is 8 bit
     public static UUID BATTERY_LEVEL_WARN_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     /* Mandatory Client Characteristic Config Descriptor */
     public static UUID CLIENT_CONFIG   = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-
+    public static UUID BATTERY_LEVEL_WARN_CONFIG   = UUID.fromString("0000290a-0000-1000-8000-00805f9b34fb");// Value Trigger Setting
     /**
      * Return a configured {@link BluetoothGattService} instance for the
      * Battery Service.
@@ -62,13 +62,12 @@ public class BatteryProfile {
                 //Read and write characteristic
                 BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
                 BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
-        /*
-        BluetoothGattDescriptor batteryLevelWarnDescriptor = new BluetoothGattDescriptor(BATTERY_LEVEL_WARN_DESCRIPTOR,
+
+        BluetoothGattDescriptor batteryLevelWarnDescriptor = new BluetoothGattDescriptor(BATTERY_LEVEL_WARN_CONFIG,
                 //Read/write descriptor
                 // this is to set that this value is a 8bit = int8 value
                 BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
         batteryLevelWarn.addDescriptor(batteryLevelWarnDescriptor);
-        */
 
         batteryLevelWarn.setValue(0, FORMAT_UINT8, 0);
         service.addCharacteristic(batteryLevel);
