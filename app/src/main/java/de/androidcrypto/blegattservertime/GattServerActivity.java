@@ -35,8 +35,12 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Queue;
+import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class GattServerActivity extends AppCompatActivity {
 
@@ -54,6 +58,9 @@ public class GattServerActivity extends AppCompatActivity {
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
     /* Collection of notification subscribers */
     private Set<BluetoothDevice> mRegisteredDevices = new HashSet<>();
+
+    private int batteryLevelValue = 40;
+    private int batteryLevelWarnValue = 0;
 
     // this is needed if you want to add more than one service to the server
     private Queue<BluetoothGattService> servicesToAdd = new LinkedBlockingQueue<>();
@@ -105,6 +112,33 @@ public class GattServerActivity extends AppCompatActivity {
                 }
             });
         }
+
+        /**
+         * The ScheduledExecutorService ist updating the value of batteryLevelValue every 10 seconds
+         * and is giving a notification to subscribed devices
+         * The batteryLevelValue is in the range of 0 .. 100
+         */
+        ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
+        executor.scheduleAtFixedRate(randomBatteryValueRunnable, 0, 10, TimeUnit.SECONDS);
+    }
+
+    Runnable randomBatteryValueRunnable = new Runnable() {
+        public void run() {
+            //System.out.println("ScheduledTask");
+            int rand = getRandomNumberInRange(-5, 5);
+            batteryLevelValue = batteryLevelValue + rand;
+            if (batteryLevelValue > 100) batteryLevelValue = 100;
+            if (batteryLevelValue < 0) batteryLevelValue = 0;
+            notifyRegisteredDevicesBattery(batteryLevelValue);
+        }
+    };
+
+    private static int getRandomNumberInRange(int min, int max) {
+        if (min >= max) {
+            throw new IllegalArgumentException("max must be greater than min");
+        }
+        Random r = new Random();
+        return r.nextInt((max - min) + 1) + min;
     }
 
     private void addLog(String message) {
@@ -386,7 +420,7 @@ public class GattServerActivity extends AppCompatActivity {
     @SuppressLint("MissingPermission")
     private void notifyRegisteredDevices(long timestamp, byte adjustReason) {
         if (mRegisteredDevices.isEmpty()) {
-            Log.i(TAG, "No subscribers registered");
+            Log.i(TAG, "No subscribers for time service registered");
             addLog("No subscribers registered for time service");
             return;
         }
@@ -401,8 +435,29 @@ public class GattServerActivity extends AppCompatActivity {
             timeCharacteristic.setValue(exactTime);
             mBluetoothGattServer.notifyCharacteristicChanged(device, timeCharacteristic, false);
         }
+    }
 
-        // todo notification for Battery Level
+    /**
+     * Send a battery level notification to any devices that are subscribed
+     * to the characteristic.
+     */
+    @SuppressLint("MissingPermission")
+    private void notifyRegisteredDevicesBattery(int batteryLevel) {
+        if (mRegisteredDevices.isEmpty()) {
+            Log.i(TAG, "No subscribers for battery service registered");
+            addLog("No subscribers registered for battery service");
+            return;
+        }
+
+        Log.i(TAG, "Sending update to " + mRegisteredDevices.size() + " subscribers");
+        addLog("Sending update to " + mRegisteredDevices.size() + " subscribers");
+        for (BluetoothDevice device : mRegisteredDevices) {
+            BluetoothGattCharacteristic batteryLevelCharacteristic = mBluetoothGattServer
+                    .getService(BatteryProfile.BATTERY_SERVICE)
+                    .getCharacteristic(BatteryProfile.BATTERY_LEVEL);
+            batteryLevelCharacteristic.setValue(BatteryProfile.getBatteryLevel(batteryLevelValue));
+            mBluetoothGattServer.notifyCharacteristicChanged(device, batteryLevelCharacteristic, false);
+        }
     }
 
     /**
@@ -510,21 +565,19 @@ public class GattServerActivity extends AppCompatActivity {
             } else if (BatteryProfile.BATTERY_LEVEL.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read BatteryLevel");
                 addLog("Read BatteryLevel");
-                // todo get the actual battery level
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_SUCCESS,
                         0,
-                        BatteryProfile.getBatteryLevel(50));
+                        BatteryProfile.getBatteryLevel(batteryLevelValue));
             } else if (BatteryProfile.BATTERY_LEVEL_WARN.equals(characteristic.getUuid())) {
                 Log.i(TAG, "Read BatteryLevelWarn");
                 addLog("Read BatteryLevelWarn");
-                // todo get the actual battery level warn
                 mBluetoothGattServer.sendResponse(device,
                         requestId,
                         BluetoothGatt.GATT_SUCCESS,
                         0,
-                        BatteryProfile.getBatteryLevelWarn(40));
+                        BatteryProfile.getBatteryLevelWarn(batteryLevelWarnValue));
                 /**
                  * characteristics for Time Server
                  */
@@ -554,6 +607,34 @@ public class GattServerActivity extends AppCompatActivity {
                         BluetoothGatt.GATT_FAILURE,
                         0,
                         null);
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId,
+                                                 BluetoothGattCharacteristic characteristic,
+                                                 boolean preparedWrite, boolean responseNeeded,
+                                                 int offset, byte[] value) {
+            if (BatteryProfile.BATTERY_LEVEL_WARN.equals(characteristic.getUuid())) {
+                Log.i(TAG, "Write BatteryLevelWarn");
+                addLog("WriteRead BatteryLevelWarn");
+                batteryLevelWarnValue = (value[0] &0xff);
+                if (responseNeeded) {
+                    mBluetoothGattServer.sendResponse(device,
+                            requestId,
+                            BluetoothGatt.GATT_SUCCESS,
+                            0,
+                            BatteryProfile.getBatteryLevelWarn(batteryLevelWarnValue));
+                }
+
+                /*
+                mBluetoothGattServer.sendResponse(device,
+                        requestId,
+                        BluetoothGatt.GATT_SUCCESS,
+                        0,
+                        BatteryProfile.getBatteryLevelWarn(40));
+
+                 */
             }
         }
 
@@ -602,7 +683,6 @@ public class GattServerActivity extends AppCompatActivity {
                         0,
                         null);
             }
-            // todo add descriptor for notification
         }
 
         @SuppressLint("MissingPermission")

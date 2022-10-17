@@ -16,6 +16,8 @@ package de.androidcrypto.blegattservertime;
  * limitations under the License.
  */
 
+import static android.bluetooth.BluetoothGattCharacteristic.FORMAT_UINT8;
+
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
@@ -34,7 +36,7 @@ public class BatteryProfile {
     public static UUID BATTERY_LEVEL      = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
     public static UUID BATTERY_LEVEL_WARN = UUID.fromString("0000fffe-0000-1000-8000-00805f9b34fb");
     // 2901 is used when data is 8 bit
-    //public static UUID BATTERY_LEVEL_DESCRIPTOR = UUID.fromString("0b972bef-d63d-47d9-afab-9f3f316a0e11"); // random
+    public static UUID BATTERY_LEVEL_WARN_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     /* Mandatory Client Characteristic Config Descriptor */
     public static UUID CLIENT_CONFIG   = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
@@ -58,9 +60,17 @@ public class BatteryProfile {
         // Battery Level warn characteristic
         BluetoothGattCharacteristic batteryLevelWarn = new BluetoothGattCharacteristic(BATTERY_LEVEL_WARN,
                 //Read and write characteristic
-                BluetoothGattCharacteristic.PROPERTY_READ,
-                BluetoothGattCharacteristic.PERMISSION_READ);
+                BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+        /*
+        BluetoothGattDescriptor batteryLevelWarnDescriptor = new BluetoothGattDescriptor(BATTERY_LEVEL_WARN_DESCRIPTOR,
+                //Read/write descriptor
+                // this is to set that this value is a 8bit = int8 value
+                BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+        batteryLevelWarn.addDescriptor(batteryLevelWarnDescriptor);
+        */
 
+        batteryLevelWarn.setValue(0, FORMAT_UINT8, 0);
         service.addCharacteristic(batteryLevel);
         service.addCharacteristic(batteryLevelWarn);
         return service;
