@@ -119,7 +119,7 @@ public class GattServerActivity extends AppCompatActivity {
          * The batteryLevelValue is in the range of 0 .. 100
          */
         ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
-        executor.scheduleAtFixedRate(randomBatteryValueRunnable, 0, 10, TimeUnit.SECONDS);
+        executor.scheduleAtFixedRate(randomBatteryValueRunnable, 0, 5, TimeUnit.SECONDS);
     }
 
     Runnable randomBatteryValueRunnable = new Runnable() {
@@ -298,7 +298,8 @@ public class GattServerActivity extends AppCompatActivity {
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
                 .setConnectable(true)
                 .setTimeout(0)
-                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+                //.setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
                 .build();
 
         AdvertiseData data = new AdvertiseData.Builder()
